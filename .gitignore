@@ -28,3 +28,6 @@ terraform.rc
 
 # Ignore lock files (uncomment if you want to commit them)
 # .terraform.lock.hcl
+
+# Ignore credentials file
+.credentials.txt

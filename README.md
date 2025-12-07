@@ -78,59 +78,42 @@ khema-infra/
 
 ## Quick Start
 
-### 1. Generate Secrets
+### One-Command Deployment
 
 ```bash
-./scripts/generate-secrets.sh
+./deploy.sh
 ```
 
-Save the output securely!
+That's it! The script will:
+- ✅ Check prerequisites (Azure CLI, OpenTofu/Terraform)
+- ✅ Verify Azure login
+- ✅ Generate or use existing SSH key
+- ✅ Prompt for PostgreSQL credentials (or use env vars)
+- ✅ Generate Langfuse secrets automatically
+- ✅ Create configuration
+- ✅ Deploy everything to Azure
+- ✅ Show the Langfuse URL
 
-### 2. Create SSH Key (if you don't have one)
+**Total time**: ~10 minutes
+
+After deployment:
+- Wait 2-3 minutes for Docker services to start
+- Open the Langfuse URL shown in the output
+- Create your first admin account
+
+### Alternative: Manual Deployment
+
+If you prefer more control:
 
 ```bash
-ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa
-```
-
-### 3. Configure Variables
-
-```bash
+# 1. Configure (optional - deploy.sh does this)
 cp terraform.tfvars.example terraform.tfvars
-```
+# Edit terraform.tfvars
 
-Edit `terraform.tfvars` with your values, or use environment variables (recommended):
-
-```bash
-export TF_VAR_postgresql_admin_username="khemaadmin"
-export TF_VAR_postgresql_admin_password="YourSecurePassword123!"
-export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_rsa.pub)"
-export TF_VAR_langfuse_secret_salt="$(openssl rand -base64 32)"
-export TF_VAR_nextauth_secret="$(openssl rand -base64 32)"
-```
-
-### 4. Deploy
-
-```bash
-# Validate configuration
+# 2. Deploy step-by-step
 ./scripts/validate.sh
-
-# Plan deployment
 ./scripts/local-deploy.sh plan
-
-# Deploy infrastructure
 ./scripts/local-deploy.sh apply
-```
-
-### 5. Access Langfuse
-
-After deployment (wait 2-3 minutes for services to start):
-
-```bash
-# Get the URL
-tofu output
-
-# Open in browser
-# http://<public-ip>:3000
 ```
 
 ## Shared Resources
