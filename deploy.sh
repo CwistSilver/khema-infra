@@ -10,7 +10,7 @@ NC='\033[0m'
 
 echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║   Khema Infrastructure Deployment     ║${NC}"
-echo -e "${BLUE}║   One-Command Setup                    ║${NC}"
+echo -e "${BLUE}║   Idempotent One-Command Setup        ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════╝${NC}\n"
 
 # Check prerequisites
@@ -19,7 +19,6 @@ echo -e "${YELLOW}[1/8] Checking prerequisites...${NC}"
 # Check Azure CLI
 if ! command -v az &> /dev/null; then
     echo -e "${RED}Error: Azure CLI not found${NC}"
-    echo "Install: https://docs.microsoft.com/cli/azure/install-azure-cli"
     exit 1
 fi
 
@@ -30,7 +29,6 @@ elif command -v terraform &> /dev/null; then
     TF_CMD="terraform"
 else
     echo -e "${RED}Error: Neither OpenTofu nor Terraform found${NC}"
-    echo "Install OpenTofu: https://opentofu.org/docs/intro/install/"
     exit 1
 fi
 echo -e "${GREEN}✓ Using: $TF_CMD${NC}"
@@ -45,7 +43,7 @@ SUBSCRIPTION=$(az account show --query name -o tsv)
 echo -e "${GREEN}✓ Azure subscription: ${SUBSCRIPTION}${NC}"
 
 # SSH Key setup
-echo -e "\n${YELLOW}[2/8] Setting up SSH key...${NC}"
+echo -e "\n${YELLOW}[2/8] Checking SSH key...${NC}"
 
 SSH_KEY_PATH="$HOME/.ssh/id_rsa"
 if [ ! -f "$SSH_KEY_PATH" ]; then
@@ -53,51 +51,75 @@ if [ ! -f "$SSH_KEY_PATH" ]; then
     ssh-keygen -t rsa -b 4096 -f "$SSH_KEY_PATH" -N "" -C "khema-infra@azure"
     echo -e "${GREEN}✓ SSH key generated${NC}"
 else
-    echo -e "${GREEN}✓ SSH key found${NC}"
+    echo -e "${GREEN}✓ SSH key exists${NC}"
 fi
 
 SSH_PUBLIC_KEY=$(cat "$SSH_KEY_PATH.pub")
 
-# Get PostgreSQL credentials
-echo -e "\n${YELLOW}[3/8] Configuring PostgreSQL credentials...${NC}"
+# Check if terraform.tfvars exists
+echo -e "\n${YELLOW}[3/8] Checking existing configuration...${NC}"
 
-if [ -n "$TF_VAR_postgresql_admin_username" ] && [ -n "$TF_VAR_postgresql_admin_password" ]; then
-    echo -e "${GREEN}✓ Using credentials from environment variables${NC}"
-    PG_USERNAME="$TF_VAR_postgresql_admin_username"
-    PG_PASSWORD="$TF_VAR_postgresql_admin_password"
-else
-    echo -e "${BLUE}Enter PostgreSQL admin username (default: khemaadmin):${NC}"
-    read -r PG_USERNAME
-    PG_USERNAME=${PG_USERNAME:-khemaadmin}
+REUSE_CONFIG=false
+if [ -f "terraform.tfvars" ]; then
+    echo -e "${GREEN}✓ Found existing terraform.tfvars${NC}"
+    echo -e "${BLUE}Do you want to reuse existing configuration? (yes/no)${NC}"
+    read -r REUSE_ANSWER
 
-    echo -e "${BLUE}Enter PostgreSQL admin password (min 8 chars, or press Enter to auto-generate):${NC}"
-    read -rs PG_PASSWORD
-    echo
-
-    if [ -z "$PG_PASSWORD" ]; then
-        PG_PASSWORD=$(openssl rand -base64 16)
-        echo -e "${GREEN}✓ Auto-generated secure password${NC}"
+    if [[ "$REUSE_ANSWER" == "yes" ]]; then
+        REUSE_CONFIG=true
+        echo -e "${GREEN}✓ Reusing existing configuration${NC}"
+    else
+        echo -e "${YELLOW}Creating new configuration...${NC}"
     fi
-fi
-
-# Generate secrets
-echo -e "\n${YELLOW}[4/8] Generating Langfuse secrets...${NC}"
-
-if [ -n "$TF_VAR_langfuse_secret_salt" ] && [ -n "$TF_VAR_nextauth_secret" ]; then
-    echo -e "${GREEN}✓ Using secrets from environment variables${NC}"
-    SALT="$TF_VAR_langfuse_secret_salt"
-    NEXTAUTH="$TF_VAR_nextauth_secret"
 else
-    SALT=$(openssl rand -base64 32 | tr -d '\n')
-    NEXTAUTH=$(openssl rand -base64 32 | tr -d '\n')
-    echo -e "${GREEN}✓ Secrets generated${NC}"
+    echo -e "${YELLOW}No existing configuration found, creating new...${NC}"
 fi
 
-# Create terraform.tfvars
-echo -e "\n${YELLOW}[5/8] Creating configuration...${NC}"
+# Get or reuse credentials
+echo -e "\n${YELLOW}[4/8] Setting up credentials...${NC}"
 
-cat > terraform.tfvars <<EOF
+if [ "$REUSE_CONFIG" = true ]; then
+    echo -e "${GREEN}✓ Using credentials from terraform.tfvars${NC}"
+else
+    # PostgreSQL credentials
+    if [ -n "$TF_VAR_postgresql_admin_username" ] && [ -n "$TF_VAR_postgresql_admin_password" ]; then
+        echo -e "${GREEN}✓ Using PostgreSQL credentials from environment${NC}"
+        PG_USERNAME="$TF_VAR_postgresql_admin_username"
+        PG_PASSWORD="$TF_VAR_postgresql_admin_password"
+    else
+        echo -e "${BLUE}PostgreSQL admin username (default: khemaadmin):${NC}"
+        read -r PG_USERNAME
+        PG_USERNAME=${PG_USERNAME:-khemaadmin}
+
+        echo -e "${BLUE}PostgreSQL admin password (min 8 chars, Enter to auto-generate):${NC}"
+        read -rs PG_PASSWORD
+        echo
+
+        if [ -z "$PG_PASSWORD" ]; then
+            PG_PASSWORD=$(openssl rand -base64 16)
+            echo -e "${GREEN}✓ Auto-generated secure password${NC}"
+        fi
+    fi
+
+    # Generate secrets
+    echo -e "\n${YELLOW}[5/8] Generating Langfuse secrets...${NC}"
+
+    if [ -n "$TF_VAR_langfuse_secret_salt" ] && [ -n "$TF_VAR_nextauth_secret" ]; then
+        echo -e "${GREEN}✓ Using secrets from environment${NC}"
+        SALT="$TF_VAR_langfuse_secret_salt"
+        NEXTAUTH="$TF_VAR_nextauth_secret"
+    else
+        SALT=$(openssl rand -base64 32 | tr -d '\n')
+        NEXTAUTH=$(openssl rand -base64 32 | tr -d '\n')
+        echo -e "${GREEN}✓ Secrets generated${NC}"
+    fi
+
+    # Create terraform.tfvars
+    echo -e "\n${YELLOW}[6/8] Creating configuration file...${NC}"
+
+    cat > terraform.tfvars <<EOF
 # Auto-generated by deploy.sh on $(date)
+# This file is reused on subsequent runs
 
 location = "westeurope"
 
@@ -112,11 +134,11 @@ langfuse_secret_salt = "$SALT"
 nextauth_secret      = "$NEXTAUTH"
 EOF
 
-echo -e "${GREEN}✓ terraform.tfvars created${NC}"
+    echo -e "${GREEN}✓ Configuration file created${NC}"
 
-# Save credentials securely
-CREDENTIALS_FILE=".credentials.txt"
-cat > "$CREDENTIALS_FILE" <<EOF
+    # Save credentials
+    CREDENTIALS_FILE=".credentials.txt"
+    cat > "$CREDENTIALS_FILE" <<EOF
 # Khema Infrastructure Credentials
 # Generated: $(date)
 # KEEP THIS FILE SECURE!
@@ -129,54 +151,63 @@ NextAuth Secret: $NEXTAUTH
 
 EOF
 
-chmod 600 "$CREDENTIALS_FILE"
-echo -e "${GREEN}✓ Credentials saved to ${CREDENTIALS_FILE}${NC}"
-
-# Initialize Terraform
-echo -e "\n${YELLOW}[6/8] Initializing Terraform...${NC}"
-$TF_CMD init
-
-# Validate
-echo -e "\n${YELLOW}[7/8] Validating configuration...${NC}"
-$TF_CMD validate
-echo -e "${GREEN}✓ Configuration valid${NC}"
-
-# Plan and Apply
-echo -e "\n${YELLOW}[8/8] Deploying infrastructure...${NC}"
-echo -e "${BLUE}This will create:${NC}"
-echo -e "  - PostgreSQL Flexible Server (B1ms, 32GB) - ~18€/month"
-echo -e "  - Key Vault for secrets"
-echo -e "  - Container Registry (crkhema)"
-echo -e "  - VM with Langfuse (B2s) - ~30€/month"
-echo -e "  ${BLUE}Total: ~48-50€/month${NC}\n"
-
-echo -e "${YELLOW}Do you want to proceed? (yes/no)${NC}"
-read -r CONFIRM
-
-if [[ "$CONFIRM" != "yes" ]]; then
-    echo -e "${YELLOW}Deployment cancelled${NC}"
-    echo -e "Run './deploy.sh' again when ready"
-    exit 0
+    chmod 600 "$CREDENTIALS_FILE"
+    echo -e "${GREEN}✓ Credentials saved to ${CREDENTIALS_FILE}${NC}"
 fi
 
-echo -e "\n${GREEN}Starting deployment...${NC}"
-$TF_CMD apply -auto-approve
+# Initialize Terraform
+echo -e "\n${YELLOW}[7/8] Initializing Terraform...${NC}"
+$TF_CMD init -upgrade
 
-# Show results
-echo -e "\n${GREEN}╔════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   Deployment Complete! 🚀              ║${NC}"
-echo -e "${GREEN}╚════════════════════════════════════════╝${NC}\n"
+# Validate
+$TF_CMD validate > /dev/null
+echo -e "${GREEN}✓ Configuration valid${NC}"
 
-echo -e "${BLUE}Getting deployment information...${NC}\n"
-$TF_CMD output
+# Plan
+echo -e "\n${YELLOW}[8/8] Checking for infrastructure changes...${NC}"
+$TF_CMD plan -detailed-exitcode -out=tfplan 2>/dev/null || PLAN_EXIT=$?
 
-echo -e "\n${YELLOW}⏳ Wait 2-3 minutes for Docker services to start${NC}"
-echo -e "${BLUE}Then access Langfuse at the URL shown above${NC}\n"
+# Exit codes: 0 = no changes, 1 = error, 2 = changes present
+if [ "${PLAN_EXIT:-0}" -eq 0 ]; then
+    echo -e "${GREEN}✓ Infrastructure is up-to-date, no changes needed${NC}"
+    rm -f tfplan
 
-echo -e "${GREEN}Credentials saved in: ${CREDENTIALS_FILE}${NC}"
-echo -e "${YELLOW}Keep this file secure!${NC}\n"
+    echo -e "\n${BLUE}Showing current deployment:${NC}"
+    $TF_CMD output 2>/dev/null || echo "No infrastructure deployed yet"
 
-echo -e "${BLUE}Useful commands:${NC}"
-echo -e "  View outputs:  $TF_CMD output"
-echo -e "  View logs:     ssh azureuser@\$(tofu output -raw langfuse.public_ip_address) 'cd /opt/langfuse && docker compose logs -f'"
-echo -e "  Destroy all:   $TF_CMD destroy"
+    exit 0
+elif [ "${PLAN_EXIT:-0}" -eq 2 ]; then
+    echo -e "${YELLOW}Changes detected:${NC}\n"
+
+    # Show summary
+    $TF_CMD show tfplan | head -50
+
+    echo -e "\n${BLUE}Full plan saved to tfplan${NC}"
+    echo -e "${YELLOW}Do you want to apply these changes? (yes/no)${NC}"
+    read -r CONFIRM
+
+    if [[ "$CONFIRM" != "yes" ]]; then
+        echo -e "${YELLOW}Deployment cancelled${NC}"
+        rm -f tfplan
+        exit 0
+    fi
+
+    echo -e "\n${GREEN}Applying changes...${NC}"
+    $TF_CMD apply tfplan
+    rm -f tfplan
+
+    # Show results
+    echo -e "\n${GREEN}╔════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║   Deployment Complete! 🚀              ║${NC}"
+    echo -e "${GREEN}╚════════════════════════════════════════╝${NC}\n"
+
+    $TF_CMD output
+
+    echo -e "\n${YELLOW}⏳ If this is first deployment, wait 2-3 minutes for Docker services to start${NC}"
+    echo -e "${GREEN}Credentials saved in: .credentials.txt${NC}\n"
+
+else
+    echo -e "${RED}Error during terraform plan${NC}"
+    rm -f tfplan
+    exit 1
+fi
