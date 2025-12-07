@@ -1,10 +1,17 @@
 # Deployment Guide
 
-Complete guide for deploying Khema infrastructure using Terraform/OpenTofu.
+Complete guide for deploying Khema infrastructure with Langfuse on Azure.
+
+## Architecture Overview
+
+**Cost-Optimized Setup**: ~48-50€/month
+
+- **rg-khema-shared**: PostgreSQL, Key Vault, Container Registry (shared across services)
+- **rg-khema-langfuse**: VM running Langfuse via Docker Compose
 
 ## Prerequisites
 
-1. **OpenTofu or Terraform** (>= 1.0)
+1. **OpenTofu** >= 1.0
    ```bash
    tofu --version
    ```
@@ -15,117 +22,61 @@ Complete guide for deploying Khema infrastructure using Terraform/OpenTofu.
    az account show
    ```
 
-3. **Existing Azure Resources**
-   - Resource Group: `rg-khema-shared`
-   - PostgreSQL Server: `khema-postgresql`
+3. **SSH Key Pair**
+   ```bash
+   # Generate if you don't have one
+   ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa
+   ```
 
-## Quick Start
+## Deployment Steps
 
-### 1. Generate Secrets
-
-Run the secret generation script:
+### Step 1: Generate Secrets
 
 ```bash
+cd khema-infra
 ./scripts/generate-secrets.sh
 ```
 
-This will generate:
-- `LANGFUSE_SECRET_SALT` (32 characters)
-- `NEXTAUTH_SECRET` (32 characters)
+This generates:
+- `LANGFUSE_SECRET_SALT` (32+ characters)
+- `NEXTAUTH_SECRET` (32+ characters)
 
-Save these securely!
+**Save these securely!** You'll need them in the next step.
 
-### 2. Configure Environment
+### Step 2: Configure Variables
 
-Copy the example tfvars file:
+**Option A: Using terraform.tfvars (easier for testing)**
 
 ```bash
-cd environments/dev
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-Edit `terraform.tfvars` and fill in:
+Edit `terraform.tfvars`:
 
 ```hcl
-# PostgreSQL Credentials (from existing database)
-postgresql_admin_username = "your_username"
-postgresql_admin_password = "your_password"
+location = "westeurope"
 
-# Generated secrets from step 1
-langfuse_secret_salt = "generated_salt_here"
-nextauth_secret      = "generated_nextauth_secret_here"
+postgresql_admin_username = "khemaadmin"
+postgresql_admin_password = "YourSecurePassword123!"  # Min 8 chars
 
-# Temporary URL (will update after first deployment)
-nextauth_url = "https://temp-url.azurecontainerapps.io"
+ssh_public_key = "ssh-rsa AAAAB3Nza... your-email@example.com"
+
+langfuse_secret_salt = "paste_generated_salt_here"
+nextauth_secret      = "paste_generated_secret_here"
 ```
 
-**Option: Use Environment Variables** (Recommended)
-
-Instead of storing secrets in `terraform.tfvars`, export them:
+**Option B: Using Environment Variables (recommended for production)**
 
 ```bash
-export TF_VAR_postgresql_admin_username="your_username"
-export TF_VAR_postgresql_admin_password="your_password"
-export TF_VAR_langfuse_secret_salt="generated_salt"
-export TF_VAR_nextauth_secret="generated_secret"
-export TF_VAR_nextauth_url="https://temp-url.azurecontainerapps.io"
+export TF_VAR_location="westeurope"
+export TF_VAR_postgresql_admin_username="khemaadmin"
+export TF_VAR_postgresql_admin_password="$(openssl rand -base64 16)"
+export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_rsa.pub)"
+export TF_VAR_langfuse_secret_salt="$(openssl rand -base64 32)"
+export TF_VAR_nextauth_secret="$(openssl rand -base64 32)"
 ```
 
-### 3. Deploy Infrastructure
-
-Using the deployment script:
-
-```bash
-# Plan deployment
-./scripts/local-deploy.sh dev plan
-
-# Apply deployment
-./scripts/local-deploy.sh dev apply
-```
-
-Or manually:
-
-```bash
-cd environments/dev
-tofu init
-tofu plan -out=tfplan
-tofu apply tfplan
-```
-
-### 4. Update NextAuth URL
-
-After first deployment, get the application URL:
-
-```bash
-tofu output langfuse_web_url
-```
-
-Update `terraform.tfvars` with the actual URL:
-
-```hcl
-nextauth_url = "https://ca-langfuse-web-dev-xxxxx.azurecontainerapps.io"
-```
-
-Re-apply:
-
-```bash
-tofu apply
-```
-
-### 5. Access Langfuse
-
-1. Get the URL:
-   ```bash
-   tofu output langfuse_web_url
-   ```
-
-2. Open in browser and create your first admin account
-
-## Development Workflow
-
-### Validate Configuration
-
-Before deploying, validate your configuration:
+### Step 3: Validate Configuration
 
 ```bash
 ./scripts/validate.sh
@@ -133,276 +84,412 @@ Before deploying, validate your configuration:
 
 This checks:
 - Terraform syntax
-- Configuration validity
+- Variable validations
 - Code formatting
 
-### Plan Changes
-
-Always plan before applying:
+### Step 4: Plan Deployment
 
 ```bash
-cd environments/dev
-tofu plan
+./scripts/local-deploy.sh plan
 ```
 
-### Apply Changes
+Review the plan carefully. It will create:
+- 2 Resource Groups
+- PostgreSQL Flexible Server
+- Key Vault
+- Container Registry
+- Virtual Machine
+- Networking resources
 
-Apply planned changes:
+### Step 5: Deploy Infrastructure
 
 ```bash
-tofu apply
+./scripts/local-deploy.sh apply
 ```
 
-### View Outputs
+This will:
+1. Create shared resources (~5 minutes)
+2. Create VM and install Docker (~3 minutes)
+3. Start Langfuse services (~2 minutes)
 
-See deployment information:
+**Total time**: ~10 minutes
+
+### Step 6: Access Langfuse
+
+Get deployment information:
 
 ```bash
 tofu output
 ```
 
-### Destroy Resources
-
-To tear down the environment:
-
-```bash
-./scripts/local-deploy.sh dev destroy
+You'll see:
+```
+langfuse_url = "http://20.93.XXX.XXX:3000"
+ssh_command  = "ssh azureuser@20.93.XXX.XXX"
 ```
 
-## Production Deployment
+**Wait 2-3 minutes** for Docker services to start, then:
 
-### Prerequisites
+1. Open the `langfuse_url` in your browser
+2. Create your first admin account
+3. Start using Langfuse!
 
-1. **Set up remote state storage:**
+## Post-Deployment
 
-   Create Azure Storage for Terraform state:
+### View All Resources
 
-   ```bash
-   # Create resource group for Terraform state
-   az group create --name rg-khema-terraform --location westeurope
+```bash
+# Shared resources
+az resource list --resource-group rg-khema-shared --output table
 
-   # Create storage account
-   az storage account create \
-     --name stkhematerraform \
-     --resource-group rg-khema-terraform \
-     --location westeurope \
-     --sku Standard_LRS \
-     --encryption-services blob
+# Langfuse resources
+az resource list --resource-group rg-khema-langfuse --output table
+```
 
-   # Create container
-   az storage container create \
-     --name tfstate \
-     --account-name stkhematerraform
-   ```
+### Access the VM
 
-2. **Enable state locking:**
+```bash
+# SSH into the VM
+ssh azureuser@<public-ip>
 
-   ```bash
-   # Enable versioning
-   az storage blob service-properties update \
-     --account-name stkhematerraform \
-     --enable-versioning true
+# Check Docker services
+cd /opt/langfuse
+docker compose ps
 
-   # Enable soft delete
-   az storage blob service-properties update \
-     --account-name stkhematerraform \
-     --enable-delete-retention true \
-     --delete-retention-days 7
-   ```
+# View logs
+docker compose logs -f
 
-3. **Configure backend:**
+# View specific service logs
+docker compose logs -f langfuse-web
+docker compose logs -f clickhouse
+```
 
-   Edit `environments/prod/backend.tf` and uncomment the backend block:
+### Verify PostgreSQL Connection
 
-   ```hcl
-   terraform {
-     backend "azurerm" {
-       resource_group_name  = "rg-khema-terraform"
-       storage_account_name = "stkhematerraform"
-       container_name       = "tfstate"
-       key                  = "prod.terraform.tfstate"
-     }
-   }
-   ```
+```bash
+# From your local machine
+az postgres flexible-server show \
+  --name khema-postgresql \
+  --resource-group rg-khema-shared
 
-4. **Migrate state:**
+# Test connection from VM
+ssh azureuser@<public-ip>
+docker exec langfuse-web sh -c 'apt-get update && apt-get install -y postgresql-client'
+docker exec langfuse-web psql "postgresql://user:pass@khema-postgresql.postgres.database.azure.com:5432/langfuse?sslmode=require" -c "SELECT version();"
+```
 
-   ```bash
-   cd environments/prod
-   tofu init -migrate-state
-   ```
+### View Secrets in Key Vault
 
-### Deploy Production
+```bash
+# List all secrets
+az keyvault secret list --vault-name <key-vault-name> --output table
 
-1. Configure production variables:
+# Get a secret
+az keyvault secret show --vault-name <key-vault-name> --name postgresql-connection-string
+```
 
-   ```bash
-   cd environments/prod
-   cp terraform.tfvars.example terraform.tfvars
-   # Edit terraform.tfvars with production values
-   ```
+## Management
 
-2. Use **Azure Key Vault** for secrets (recommended):
+### Update Langfuse
 
-   ```bash
-   # Store secrets in Key Vault
-   az keyvault secret set --vault-name khema-keyvault \
-     --name langfuse-secret-salt --value "your_secret"
+```bash
+# SSH to VM
+ssh azureuser@<public-ip>
 
-   # Reference in Terraform (alternative approach)
-   ```
+# Pull latest images
+cd /opt/langfuse
+docker compose pull
 
-3. Deploy:
+# Restart with new images
+docker compose up -d
 
-   ```bash
-   ./scripts/local-deploy.sh prod plan
-   ./scripts/local-deploy.sh prod apply
-   ```
+# View logs
+docker compose logs -f
+```
 
-## Cost Optimization
+### Restart Services
 
-### Development Environment
+```bash
+# Restart all services
+docker compose restart
 
-The dev environment is configured for minimal cost:
+# Restart specific service
+docker compose restart langfuse-web
+docker compose restart clickhouse
+```
 
-- **Scale to Zero**: `min_replicas = 0` - no cost when idle
-- **Smaller Resources**: 0.5 CPU, 1Gi memory
-- **Basic Redis**: Smallest SKU
-- **LRS Storage**: Locally redundant storage
+### Scale Resources
 
-**Estimated Dev Cost**: ~€10-20/month (mostly Redis when running)
+**Increase VM size**:
 
-### Production Environment
+Edit `main.tf`:
+```hcl
+vm_size = "Standard_B4ms"  # 4 vCPU, 16GB RAM
+```
 
-Production is configured for reliability:
+Then:
+```bash
+./scripts/local-deploy.sh plan
+./scripts/local-deploy.sh apply
+```
 
-- **Always Available**: `min_replicas = 1`
-- **Better Resources**: 1.0 CPU, 2Gi memory
-- **Standard Redis**: Better performance and SLA
-- **Higher Limits**: Up to 20 replicas
+**Increase PostgreSQL size**:
 
-**Estimated Prod Cost**: ~€50-150/month (depending on usage)
+Edit `main.tf`:
+```hcl
+postgresql_sku_name   = "B_Standard_B2s"  # 2 vCores, 4GB RAM
+postgresql_storage_mb = 65536              # 64GB
+```
+
+Then apply changes.
+
+### Backup and Restore
+
+**PostgreSQL Backups** (automatic):
+
+```bash
+# List backups
+az postgres flexible-server backup list \
+  --name khema-postgresql \
+  --resource-group rg-khema-shared
+
+# Restore to point in time
+az postgres flexible-server restore \
+  --name khema-postgresql-restored \
+  --source-server khema-postgresql \
+  --resource-group rg-khema-shared \
+  --restore-time "2024-01-15T10:00:00Z"
+```
+
+**VM Backup**:
+
+```bash
+# Create snapshot
+az snapshot create \
+  --resource-group rg-khema-langfuse \
+  --name vm-langfuse-snapshot-$(date +%Y%m%d) \
+  --source $(az vm show -g rg-khema-langfuse -n vm-langfuse --query "storageProfile.osDisk.managedDisk.id" -o tsv)
+```
 
 ## Monitoring
 
 ### View Logs
 
-Using Azure CLI:
-
 ```bash
-# Get the container app name
-CA_NAME=$(tofu output -raw container_app_web_id | rev | cut -d'/' -f1 | rev)
+# All services
+ssh azureuser@<public-ip> 'cd /opt/langfuse && docker compose logs --tail=100'
 
-# Stream logs
-az containerapp logs show \
-  --name $CA_NAME \
-  --resource-group rg-khema-dev \
-  --follow
+# Follow logs in real-time
+ssh azureuser@<public-ip> 'cd /opt/langfuse && docker compose logs -f'
 ```
 
-### Metrics
+### Resource Usage
 
-View metrics in Azure Portal:
-- Navigate to Container App
-- Click "Metrics"
-- Monitor: Requests, CPU, Memory, Replicas
+```bash
+# VM metrics
+az vm list-usage --location westeurope --output table
+
+# PostgreSQL metrics
+az monitor metrics list \
+  --resource $(az postgres flexible-server show -n khema-postgresql -g rg-khema-shared --query id -o tsv) \
+  --metric cpu_percent \
+  --output table
+```
+
+### Set up Alerts
+
+```bash
+# CPU alert for VM
+az monitor metrics alert create \
+  --name vm-langfuse-high-cpu \
+  --resource-group rg-khema-langfuse \
+  --scopes $(az vm show -g rg-khema-langfuse -n vm-langfuse --query id -o tsv) \
+  --condition "avg Percentage CPU > 80" \
+  --description "Alert when CPU exceeds 80%"
+```
+
+## Cost Management
+
+### View Current Costs
+
+```bash
+# Cost for resource groups
+az consumption usage list \
+  --start-date $(date -d "1 month ago" +%Y-%m-%d) \
+  --end-date $(date +%Y-%m-%d) \
+  | jq -r '.[] | select(.instanceName | contains("khema")) | "\(.instanceName): \(.pretaxCost) \(.currency)"'
+```
+
+### Cost Optimization Tips
+
+1. **Stop VM when not in use** (saves ~30€/month):
+   ```bash
+   az vm deallocate -g rg-khema-langfuse -n vm-langfuse
+   az vm start -g rg-khema-langfuse -n vm-langfuse
+   ```
+
+2. **Use Reserved Instances** for long-term savings (30-50% discount)
+
+3. **Downgrade PostgreSQL** if usage is low:
+   ```hcl
+   postgresql_sku_name = "B_Standard_B1ms"  # Cheapest option
+   ```
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Database Connection Failed**
-   - Verify PostgreSQL credentials
-   - Check firewall rules on PostgreSQL server
-   - Ensure SSL mode is enabled
-
-2. **Container App Not Starting**
-   - Check container logs
-   - Verify environment variables
-   - Check image pull status
-
-3. **Scale to Zero Not Working**
-   - Verify `min_replicas = 0`
-   - Check scaling rules configuration
-   - May take 5-10 minutes to scale down
-
-4. **NextAuth Errors**
-   - Ensure `nextauth_url` matches actual URL
-   - Verify `nextauth_secret` is set
-   - Check that URL is accessible
-
-### Debug Commands
+### Langfuse not accessible
 
 ```bash
-# Check resource group
-az group show --name rg-khema-dev
+# Check VM is running
+az vm get-instance-view \
+  --name vm-langfuse \
+  --resource-group rg-khema-langfuse \
+  --query instanceView.statuses[1].displayStatus
 
-# Check container app status
-az containerapp show --name ca-langfuse-web-dev --resource-group rg-khema-dev
+# Check NSG rules
+az network nsg rule list \
+  --nsg-name nsg-langfuse \
+  --resource-group rg-khema-langfuse \
+  --output table
 
-# Check replicas
-az containerapp revision list --name ca-langfuse-web-dev --resource-group rg-khema-dev
-
-# Check logs
-az containerapp logs show --name ca-langfuse-web-dev --resource-group rg-khema-dev --tail 100
+# Check Docker services
+ssh azureuser@<public-ip> 'docker compose -f /opt/langfuse/docker-compose.yml ps'
 ```
 
-## CI/CD Pipeline (Future)
+### PostgreSQL connection failed
 
-Planned GitHub Actions workflow:
+```bash
+# Check firewall rules
+az postgres flexible-server firewall-rule list \
+  --name khema-postgresql \
+  --resource-group rg-khema-shared \
+  --output table
 
-1. **Pull Request**: Validate and plan
-2. **Merge to main**: Auto-deploy to dev
-3. **Tag release**: Manual approval to deploy to prod
+# Add your IP if needed
+az postgres flexible-server firewall-rule create \
+  --name khema-postgresql \
+  --resource-group rg-khema-shared \
+  --rule-name AllowMyIP \
+  --start-ip-address YOUR_IP \
+  --end-ip-address YOUR_IP
+```
+
+### Docker Compose issues
+
+```bash
+# SSH to VM
+ssh azureuser@<public-ip>
+
+# Check Docker service
+sudo systemctl status docker
+
+# Recreate containers
+cd /opt/langfuse
+docker compose down
+docker compose up -d
+
+# View specific service logs
+docker compose logs langfuse-web
+docker compose logs clickhouse
+```
+
+### Key Vault access denied
+
+```bash
+# Grant yourself access
+az keyvault set-policy \
+  --name <key-vault-name> \
+  --upn your-email@example.com \
+  --secret-permissions get list set delete
+```
 
 ## Security Best Practices
 
-1. **Never commit secrets** - Use environment variables or Key Vault
-2. **Use remote state** for production
-3. **Enable state locking** to prevent concurrent modifications
-4. **Review plans** before applying
-5. **Use separate service principals** for CI/CD
-6. **Enable Azure AD authentication** for PostgreSQL
-7. **Use managed identities** where possible
-
-## Updating Langfuse
-
-To update Langfuse to a new version:
-
-1. Update the image tag in `modules/langfuse/main.tf`:
-   ```hcl
-   image = "langfuse/langfuse:v2.x.x"
-   ```
-
-2. Plan and apply:
+1. **Rotate credentials regularly**:
    ```bash
-   tofu plan
-   tofu apply
+   # Update PostgreSQL password
+   az postgres flexible-server update \
+     --name khema-postgresql \
+     --resource-group rg-khema-shared \
+     --admin-password "NewSecurePassword123!"
+
+   # Update in Key Vault
+   az keyvault secret set \
+     --vault-name <key-vault-name> \
+     --name postgresql-admin-password \
+     --value "NewSecurePassword123!"
+
+   # Update environment in VM
+   # SSH and update docker-compose.yml, then restart
    ```
 
-3. Container Apps will perform a rolling update
+2. **Restrict SSH access**:
+   ```bash
+   # Update NSG to allow only your IP
+   az network nsg rule update \
+     --resource-group rg-khema-langfuse \
+     --nsg-name nsg-langfuse \
+     --name SSH \
+     --source-address-prefixes YOUR_IP/32
+   ```
 
-## Backup and Recovery
+3. **Enable Azure AD authentication** for PostgreSQL
 
-### Database Backups
+4. **Use managed identities** where possible
 
-PostgreSQL Flexible Server has automatic backups enabled. To restore:
+## Destroying Infrastructure
+
+**WARNING**: This destroys ALL data!
 
 ```bash
-az postgres flexible-server restore \
-  --resource-group rg-khema-shared \
-  --name khema-postgresql-restored \
-  --source-server khema-postgresql \
-  --restore-time "2024-01-15T13:10:00Z"
+./scripts/local-deploy.sh destroy
 ```
 
-### State File Backups
+Or manually:
+```bash
+az group delete --name rg-khema-langfuse --yes --no-wait
+az group delete --name rg-khema-shared --yes --no-wait
+```
 
-State files in Azure Storage are versioned and have soft-delete enabled.
+## Remote State Setup (Production)
 
-## Additional Resources
+Store state in Azure Storage for team collaboration:
 
-- [OpenTofu Documentation](https://opentofu.org/docs/)
-- [Azure Container Apps Docs](https://learn.microsoft.com/azure/container-apps/)
-- [Langfuse Documentation](https://langfuse.com/docs/)
-- [Terraform AzureRM Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs)
+```bash
+# Create storage account
+az storage account create \
+  --name stkhematerraform \
+  --resource-group rg-khema-shared \
+  --location westeurope \
+  --sku Standard_LRS \
+  --encryption-services blob
+
+# Create container
+az storage container create \
+  --name tfstate \
+  --account-name stkhematerraform
+
+# Enable versioning
+az storage blob service-properties update \
+  --account-name stkhematerraform \
+  --enable-versioning true
+
+# Edit backend.tf and uncomment the backend block
+# Then migrate:
+tofu init -migrate-state
+```
+
+## Next Steps
+
+- Set up SSL/TLS with Let's Encrypt
+- Configure custom domain
+- Set up monitoring dashboards
+- Configure automated backups
+- Add more services to the infrastructure
+
+## Support
+
+For issues or questions:
+- Check logs: `docker compose logs`
+- Review Terraform state: `tofu show`
+- Azure Portal: https://portal.azure.com

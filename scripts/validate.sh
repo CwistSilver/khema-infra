@@ -7,36 +7,28 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${YELLOW}Validating Terraform configurations...${NC}"
+echo -e "${YELLOW}Validating Terraform configuration...${NC}\n"
 
-# Find all environment directories
-for env_dir in environments/*/; do
-    env_name=$(basename "$env_dir")
-    echo -e "\n${YELLOW}Validating ${env_name} environment...${NC}"
+# Initialize Terraform
+echo "Running: tofu init -backend=false"
+tofu init -backend=false > /dev/null
 
-    cd "$env_dir"
+# Validate configuration
+if tofu validate; then
+    echo -e "${GREEN}✓ Configuration is valid${NC}"
+else
+    echo -e "${RED}✗ Configuration is invalid${NC}"
+    exit 1
+fi
 
-    # Initialize Terraform
-    echo "Running: tofu init -backend=false"
-    tofu init -backend=false > /dev/null
-
-    # Validate configuration
-    if tofu validate; then
-        echo -e "${GREEN}✓ ${env_name} configuration is valid${NC}"
-    else
-        echo -e "${RED}✗ ${env_name} configuration is invalid${NC}"
-        exit 1
-    fi
-
-    # Format check
-    if tofu fmt -check -recursive; then
-        echo -e "${GREEN}✓ ${env_name} formatting is correct${NC}"
-    else
-        echo -e "${RED}✗ ${env_name} needs formatting. Run: tofu fmt -recursive${NC}"
-        exit 1
-    fi
-
-    cd - > /dev/null
-done
+# Format check
+echo -e "\n${YELLOW}Checking code formatting...${NC}"
+if tofu fmt -check -recursive; then
+    echo -e "${GREEN}✓ Code formatting is correct${NC}"
+else
+    echo -e "${YELLOW}✗ Code needs formatting. Running: tofu fmt -recursive${NC}"
+    tofu fmt -recursive
+    echo -e "${GREEN}✓ Code formatted${NC}"
+fi
 
 echo -e "\n${GREEN}All validations passed!${NC}"

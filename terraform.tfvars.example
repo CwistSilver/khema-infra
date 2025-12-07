@@ -1,0 +1,32 @@
+# Azure Configuration
+location = "westeurope"
+
+# PostgreSQL Credentials
+# IMPORTANT: Never commit actual credentials!
+# Generate a strong password: openssl rand -base64 16
+postgresql_admin_username = "khemaadmin"
+postgresql_admin_password = "YourSecurePassword123!"
+
+# VM Configuration
+vm_admin_username = "azureuser"
+
+# SSH Public Key
+# Get your key with: cat ~/.ssh/id_rsa.pub
+# Or generate new: ssh-keygen -t rsa -b 4096
+ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2E... your-email@example.com"
+
+# Langfuse Secrets
+# Generate with: openssl rand -base64 32
+langfuse_secret_salt = "generate_random_32_char_string_here_xxxxxxxxxxxxxxxxx"
+nextauth_secret      = "generate_random_32_char_string_here_xxxxxxxxxxxxxxxxx"
+
+# ============================================
+# ALTERNATIVE: Use environment variables
+# ============================================
+# Instead of storing secrets here, export them:
+#
+# export TF_VAR_postgresql_admin_username="khemaadmin"
+# export TF_VAR_postgresql_admin_password="YourSecurePassword123!"
+# export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_rsa.pub)"
+# export TF_VAR_langfuse_secret_salt="$(openssl rand -base64 32)"
+# export TF_VAR_nextauth_secret="$(openssl rand -base64 32)"

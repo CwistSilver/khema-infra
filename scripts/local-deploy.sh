@@ -10,27 +10,15 @@ NC='\033[0m' # No Color
 
 # Function to print usage
 usage() {
-    echo "Usage: $0 <environment> [plan|apply|destroy]"
-    echo "  environment: dev or prod"
-    echo "  action: plan (default), apply, or destroy"
+    echo "Usage: $0 [plan|apply|destroy]"
+    echo "  plan    - Show what will be created/changed"
+    echo "  apply   - Deploy the infrastructure"
+    echo "  destroy - Destroy all infrastructure"
     exit 1
 }
 
 # Check arguments
-if [ $# -lt 1 ]; then
-    usage
-fi
-
-ENV=$1
-ACTION=${2:-plan}
-ENV_DIR="environments/${ENV}"
-
-# Validate environment
-if [ ! -d "$ENV_DIR" ]; then
-    echo -e "${RED}Error: Environment '${ENV}' not found${NC}"
-    echo "Available environments: dev, prod"
-    exit 1
-fi
+ACTION=${1:-plan}
 
 # Validate action
 if [[ ! "$ACTION" =~ ^(plan|apply|destroy)$ ]]; then
@@ -39,7 +27,7 @@ if [[ ! "$ACTION" =~ ^(plan|apply|destroy)$ ]]; then
 fi
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}Environment: ${ENV}${NC}"
+echo -e "${BLUE}Khema Infrastructure Deployment${NC}"
 echo -e "${BLUE}Action: ${ACTION}${NC}"
 echo -e "${BLUE}========================================${NC}"
 
@@ -53,9 +41,6 @@ fi
 
 SUBSCRIPTION=$(az account show --query name -o tsv)
 echo -e "${GREEN}✓ Logged in to Azure subscription: ${SUBSCRIPTION}${NC}"
-
-# Change to environment directory
-cd "$ENV_DIR"
 
 # Check for tfvars file
 if [ ! -f "terraform.tfvars" ]; then
@@ -78,7 +63,7 @@ case $ACTION in
         echo -e "\n${YELLOW}Running Terraform plan...${NC}"
         tofu plan -out=tfplan
         echo -e "\n${GREEN}Plan saved to tfplan${NC}"
-        echo -e "${YELLOW}To apply this plan, run: $0 ${ENV} apply${NC}"
+        echo -e "${YELLOW}To apply this plan, run: $0 apply${NC}"
         ;;
 
     apply)
@@ -105,8 +90,13 @@ case $ACTION in
         ;;
 
     destroy)
-        echo -e "\n${RED}WARNING: This will destroy all resources in ${ENV}!${NC}"
-        echo -e "${YELLOW}Are you sure? Type 'yes' to confirm:${NC}"
+        echo -e "\n${RED}WARNING: This will destroy ALL infrastructure!${NC}"
+        echo -e "${YELLOW}This includes:${NC}"
+        echo -e "  - PostgreSQL database (rg-khema-shared)"
+        echo -e "  - Key Vault with all secrets"
+        echo -e "  - Container Registry"
+        echo -e "  - Langfuse VM and all data"
+        echo -e "\n${YELLOW}Are you ABSOLUTELY sure? Type 'yes' to confirm:${NC}"
         read -r response
         if [[ "$response" == "yes" ]]; then
             tofu destroy
@@ -117,5 +107,3 @@ case $ACTION in
         fi
         ;;
 esac
-
-cd - > /dev/null

@@ -1,0 +1,134 @@
+#cloud-config
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+
+write_files:
+  - path: /opt/langfuse/docker-compose.yml
+    permissions: '0644'
+    content: |
+      version: '3.8'
+
+      services:
+        langfuse-web:
+          image: langfuse/langfuse:latest
+          container_name: langfuse-web
+          restart: unless-stopped
+          ports:
+            - "3000:3000"
+          environment:
+            - NODE_ENV=production
+            - DATABASE_URL=postgresql://${postgresql_username}:${postgresql_password}@${postgresql_host}:5432/langfuse?sslmode=require
+            - DIRECT_URL=postgresql://${postgresql_username}:${postgresql_password}@${postgresql_host}:5432/langfuse?sslmode=require
+            - NEXTAUTH_URL=http://${public_ip}:3000
+            - NEXTAUTH_SECRET=${nextauth_secret}
+            - SALT=${salt}
+            - TELEMETRY_ENABLED=false
+            - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=false
+            - REDIS_HOST=redis
+            - REDIS_PORT=6379
+            - CLICKHOUSE_HOST=clickhouse
+            - CLICKHOUSE_PORT=8123
+            - CLICKHOUSE_USER=default
+            - CLICKHOUSE_PASSWORD=
+          depends_on:
+            - redis
+            - clickhouse
+          networks:
+            - langfuse-network
+
+        langfuse-worker:
+          image: langfuse/langfuse:latest
+          container_name: langfuse-worker
+          restart: unless-stopped
+          environment:
+            - NODE_ENV=production
+            - DATABASE_URL=postgresql://${postgresql_username}:${postgresql_password}@${postgresql_host}:5432/langfuse?sslmode=require
+            - DIRECT_URL=postgresql://${postgresql_username}:${postgresql_password}@${postgresql_host}:5432/langfuse?sslmode=require
+            - SALT=${salt}
+            - TELEMETRY_ENABLED=false
+            - REDIS_HOST=redis
+            - REDIS_PORT=6379
+            - CLICKHOUSE_HOST=clickhouse
+            - CLICKHOUSE_PORT=8123
+            - CLICKHOUSE_USER=default
+            - CLICKHOUSE_PASSWORD=
+            - LANGFUSE_WORKER_HOST=0.0.0.0
+            - LANGFUSE_WORKER_PORT=3030
+          depends_on:
+            - redis
+            - clickhouse
+          networks:
+            - langfuse-network
+
+        redis:
+          image: redis:7-alpine
+          container_name: langfuse-redis
+          restart: unless-stopped
+          volumes:
+            - redis-data:/data
+          networks:
+            - langfuse-network
+
+        clickhouse:
+          image: clickhouse/clickhouse-server:latest
+          container_name: langfuse-clickhouse
+          restart: unless-stopped
+          environment:
+            - CLICKHOUSE_DB=langfuse
+            - CLICKHOUSE_USER=default
+            - CLICKHOUSE_PASSWORD=
+          volumes:
+            - clickhouse-data:/var/lib/clickhouse
+          networks:
+            - langfuse-network
+
+      volumes:
+        redis-data:
+        clickhouse-data:
+
+      networks:
+        langfuse-network:
+          driver: bridge
+
+  - path: /opt/langfuse/setup.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -e
+
+      echo "Waiting for Docker to be ready..."
+      while ! docker info >/dev/null 2>&1; do
+        sleep 1
+      done
+
+      echo "Starting Langfuse services..."
+      cd /opt/langfuse
+      docker compose up -d
+
+      echo "Langfuse is starting up..."
+      echo "Web interface will be available at: http://${public_ip}:3000"
+      echo "It may take 1-2 minutes for all services to be ready."
+
+runcmd:
+  # Install Docker
+  - curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+  - sh /tmp/get-docker.sh
+  - usermod -aG docker ubuntu
+
+  # Install Docker Compose (standalone)
+  - curl -SL https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
+  - chmod +x /usr/local/bin/docker-compose
+  - ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+
+  # Start Langfuse
+  - /opt/langfuse/setup.sh
+
+final_message: "Langfuse VM setup complete! Access at http://${public_ip}:3000"
