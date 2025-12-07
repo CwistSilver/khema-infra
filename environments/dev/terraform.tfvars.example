@@ -1,0 +1,24 @@
+# Azure Configuration
+location = "westeurope"
+
+# Shared Resources
+shared_resource_group_name = "rg-khema-shared"
+postgresql_server_name     = "khema-postgresql"
+postgresql_database_name   = "langfuse_dev"
+
+# PostgreSQL Credentials
+# IMPORTANT: Never commit actual credentials!
+# Use environment variables or Azure Key Vault instead:
+#   export TF_VAR_postgresql_admin_username="your_username"
+#   export TF_VAR_postgresql_admin_password="your_password"
+postgresql_admin_username = "admin_username_here"
+postgresql_admin_password = "admin_password_here"
+
+# Langfuse Secrets
+# Generate with: openssl rand -base64 32
+langfuse_secret_salt = "generate_random_32_char_string_here"
+nextauth_secret      = "generate_random_32_char_string_here"
+
+# NextAuth URL - will be updated after first deployment
+# After first apply, update this with the output from 'langfuse_web_url'
+nextauth_url = "https://your-app-url-here.azurecontainerapps.io"
