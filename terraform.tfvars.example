@@ -20,6 +20,10 @@ ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2E... your-email@example.com"
 langfuse_secret_salt = "generate_random_32_char_string_here_xxxxxxxxxxxxxxxxx"
 nextauth_secret      = "generate_random_32_char_string_here_xxxxxxxxxxxxxxxxx"
 
+# Encryption Key (Required - 64 hex characters)
+# Generate with: openssl rand -hex 32
+encryption_key = "generate_64_hex_char_string_here_256_bits_xxxxxxxxxxxxxxxx"
+
 # ============================================
 # ALTERNATIVE: Use environment variables
 # ============================================
@@ -30,3 +34,4 @@ nextauth_secret      = "generate_random_32_char_string_here_xxxxxxxxxxxxxxxxx"
 # export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_rsa.pub)"
 # export TF_VAR_langfuse_secret_salt="$(openssl rand -base64 32)"
 # export TF_VAR_nextauth_secret="$(openssl rand -base64 32)"
+# export TF_VAR_encryption_key="$(openssl rand -hex 32)"

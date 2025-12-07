@@ -133,6 +133,7 @@ locals {
     postgresql_password = var.postgresql_admin_password
     salt                = var.langfuse_secret_salt
     nextauth_secret     = var.nextauth_secret
+    encryption_key      = var.encryption_key
     public_ip           = azurerm_public_ip.langfuse.ip_address
   })
 }

@@ -53,3 +53,14 @@ variable "nextauth_secret" {
     error_message = "NextAuth secret must be at least 32 characters long."
   }
 }
+
+variable "encryption_key" {
+  description = "Encryption key for sensitive data (64 hex characters)"
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = length(var.encryption_key) == 64
+    error_message = "Encryption key must be exactly 64 hex characters (256 bits)."
+  }
+}

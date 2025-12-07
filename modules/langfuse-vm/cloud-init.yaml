@@ -24,20 +24,40 @@ write_files:
           ports:
             - "3000:3000"
           environment:
+            # Database
             - NODE_ENV=production
             - DATABASE_URL=postgresql://${postgresql_username}:${postgresql_password}@${postgresql_host}:5432/langfuse?sslmode=require
             - DIRECT_URL=postgresql://${postgresql_username}:${postgresql_password}@${postgresql_host}:5432/langfuse?sslmode=require
+
+            # Clickhouse
+            - CLICKHOUSE_MIGRATION_URL=clickhouse://clickhouse:9000
+            - CLICKHOUSE_URL=http://clickhouse:8123
+            - CLICKHOUSE_USER=default
+            - CLICKHOUSE_PASSWORD=
+            - CLICKHOUSE_DB=default
+            - CLICKHOUSE_CLUSTER_ENABLED=false
+            - LANGFUSE_AUTO_CLICKHOUSE_MIGRATION_DISABLED=false
+
+            # Redis
+            - REDIS_CONNECTION_STRING=redis://redis:6379
+            - REDIS_HOST=redis
+            - REDIS_PORT=6379
+
+            # Auth & Security
             - NEXTAUTH_URL=http://${public_ip}:3000
             - NEXTAUTH_SECRET=${nextauth_secret}
             - SALT=${salt}
+            - ENCRYPTION_KEY=${encryption_key}
+
+            # Features
             - TELEMETRY_ENABLED=false
             - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=false
-            - REDIS_HOST=redis
-            - REDIS_PORT=6379
-            - CLICKHOUSE_HOST=clickhouse
-            - CLICKHOUSE_PORT=8123
-            - CLICKHOUSE_USER=default
-            - CLICKHOUSE_PASSWORD=
+            - LANGFUSE_LOG_LEVEL=info
+            - LANGFUSE_LOG_FORMAT=text
+
+            # Server
+            - PORT=3000
+            - HOSTNAME=0.0.0.0
           depends_on:
             - redis
             - clickhouse
@@ -49,19 +69,36 @@ write_files:
           container_name: langfuse-worker
           restart: unless-stopped
           environment:
+            # Database
             - NODE_ENV=production
             - DATABASE_URL=postgresql://${postgresql_username}:${postgresql_password}@${postgresql_host}:5432/langfuse?sslmode=require
             - DIRECT_URL=postgresql://${postgresql_username}:${postgresql_password}@${postgresql_host}:5432/langfuse?sslmode=require
-            - SALT=${salt}
-            - TELEMETRY_ENABLED=false
-            - REDIS_HOST=redis
-            - REDIS_PORT=6379
-            - CLICKHOUSE_HOST=clickhouse
-            - CLICKHOUSE_PORT=8123
+
+            # Clickhouse
+            - CLICKHOUSE_MIGRATION_URL=clickhouse://clickhouse:9000
+            - CLICKHOUSE_URL=http://clickhouse:8123
             - CLICKHOUSE_USER=default
             - CLICKHOUSE_PASSWORD=
+            - CLICKHOUSE_DB=default
+            - CLICKHOUSE_CLUSTER_ENABLED=false
+
+            # Redis
+            - REDIS_CONNECTION_STRING=redis://redis:6379
+            - REDIS_HOST=redis
+            - REDIS_PORT=6379
+
+            # Security
+            - SALT=${salt}
+            - ENCRYPTION_KEY=${encryption_key}
+
+            # Features
+            - TELEMETRY_ENABLED=false
+            - LANGFUSE_LOG_LEVEL=info
+
+            # Worker
             - LANGFUSE_WORKER_HOST=0.0.0.0
             - LANGFUSE_WORKER_PORT=3030
+            - PORT=3030
           depends_on:
             - redis
             - clickhouse

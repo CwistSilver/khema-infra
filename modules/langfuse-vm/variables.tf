@@ -56,6 +56,12 @@ variable "nextauth_secret" {
   sensitive   = true
 }
 
+variable "encryption_key" {
+  description = "Encryption key for sensitive data (64 hex characters)"
+  type        = string
+  sensitive   = true
+}
+
 variable "tags" {
   description = "Tags to apply to resources"
   type        = map(string)

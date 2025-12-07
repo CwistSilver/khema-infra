@@ -52,6 +52,7 @@ module "langfuse" {
   postgresql_admin_password = var.postgresql_admin_password
   langfuse_secret_salt      = var.langfuse_secret_salt
   nextauth_secret           = var.nextauth_secret
+  encryption_key            = var.encryption_key
 
   tags = {
     ManagedBy   = "Terraform"
