@@ -31,6 +31,11 @@ module "shared_resources" {
   postgresql_storage_mb     = 32768             # 32GB
   container_registry_sku    = "Basic"           # Cheapest ACR
 
+  # Langfuse secrets to store in Key Vault
+  langfuse_secret_salt = var.langfuse_secret_salt
+  nextauth_secret      = var.nextauth_secret
+  encryption_key       = var.encryption_key
+
   tags = {
     ManagedBy   = "Terraform"
     Environment = "shared"
@@ -53,6 +58,10 @@ module "langfuse" {
   langfuse_secret_salt      = var.langfuse_secret_salt
   nextauth_secret           = var.nextauth_secret
   encryption_key            = var.encryption_key
+
+  # Key Vault for fetching secrets via Managed Identity
+  key_vault_id   = module.shared_resources.key_vault_id
+  key_vault_name = module.shared_resources.key_vault_name
 
   tags = {
     ManagedBy   = "Terraform"

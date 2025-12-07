@@ -62,6 +62,16 @@ variable "encryption_key" {
   sensitive   = true
 }
 
+variable "key_vault_id" {
+  description = "ID of the Key Vault containing secrets"
+  type        = string
+}
+
+variable "key_vault_name" {
+  description = "Name of the Key Vault containing secrets"
+  type        = string
+}
+
 variable "tags" {
   description = "Tags to apply to resources"
   type        = map(string)

@@ -9,8 +9,34 @@ packages:
   - curl
   - gnupg
   - lsb-release
+  - jq
 
 write_files:
+  - path: /opt/langfuse/fetch-secrets.sh
+    permissions: '0700'
+    content: |
+      #!/bin/bash
+      set -e
+
+      KEY_VAULT="${key_vault_name}"
+
+      echo "Fetching secrets from Key Vault: $KEY_VAULT"
+
+      # Login with Managed Identity
+      az login --identity --allow-no-subscriptions > /dev/null 2>&1
+
+      # Fetch secrets
+      PG_USER=$(az keyvault secret show --vault-name "$KEY_VAULT" --name postgresql-admin-username --query value -o tsv)
+      PG_PASS=$(az keyvault secret show --vault-name "$KEY_VAULT" --name postgresql-admin-password --query value -o tsv)
+      SALT=$(az keyvault secret show --vault-name "$KEY_VAULT" --name langfuse-secret-salt --query value -o tsv)
+      NEXTAUTH=$(az keyvault secret show --vault-name "$KEY_VAULT" --name nextauth-secret --query value -o tsv)
+      ENCRYPTION=$(az keyvault secret show --vault-name "$KEY_VAULT" --name encryption-key --query value -o tsv)
+
+      # Export for docker-compose
+      export PG_USER PG_PASS SALT NEXTAUTH ENCRYPTION
+
+      echo "✓ Secrets fetched successfully"
+
   - path: /opt/langfuse/docker-compose.yml
     permissions: '0644'
     content: |
@@ -23,41 +49,8 @@ write_files:
           restart: unless-stopped
           ports:
             - "3000:3000"
-          environment:
-            # Database
-            - NODE_ENV=production
-            - DATABASE_URL=postgresql://${postgresql_username}:${postgresql_password}@${postgresql_host}:5432/langfuse?sslmode=require
-            - DIRECT_URL=postgresql://${postgresql_username}:${postgresql_password}@${postgresql_host}:5432/langfuse?sslmode=require
-
-            # Clickhouse
-            - CLICKHOUSE_MIGRATION_URL=clickhouse://clickhouse:9000
-            - CLICKHOUSE_URL=http://clickhouse:8123
-            - CLICKHOUSE_USER=default
-            - CLICKHOUSE_PASSWORD=
-            - CLICKHOUSE_DB=default
-            - CLICKHOUSE_CLUSTER_ENABLED=false
-            - LANGFUSE_AUTO_CLICKHOUSE_MIGRATION_DISABLED=false
-
-            # Redis
-            - REDIS_CONNECTION_STRING=redis://redis:6379
-            - REDIS_HOST=redis
-            - REDIS_PORT=6379
-
-            # Auth & Security
-            - NEXTAUTH_URL=http://${public_ip}:3000
-            - NEXTAUTH_SECRET=${nextauth_secret}
-            - SALT=${salt}
-            - ENCRYPTION_KEY=${encryption_key}
-
-            # Features
-            - TELEMETRY_ENABLED=false
-            - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=false
-            - LANGFUSE_LOG_LEVEL=info
-            - LANGFUSE_LOG_FORMAT=text
-
-            # Server
-            - PORT=3000
-            - HOSTNAME=0.0.0.0
+          env_file:
+            - .env
           depends_on:
             - redis
             - clickhouse
@@ -68,34 +61,9 @@ write_files:
           image: langfuse/langfuse:latest
           container_name: langfuse-worker
           restart: unless-stopped
+          env_file:
+            - .env
           environment:
-            # Database
-            - NODE_ENV=production
-            - DATABASE_URL=postgresql://${postgresql_username}:${postgresql_password}@${postgresql_host}:5432/langfuse?sslmode=require
-            - DIRECT_URL=postgresql://${postgresql_username}:${postgresql_password}@${postgresql_host}:5432/langfuse?sslmode=require
-
-            # Clickhouse
-            - CLICKHOUSE_MIGRATION_URL=clickhouse://clickhouse:9000
-            - CLICKHOUSE_URL=http://clickhouse:8123
-            - CLICKHOUSE_USER=default
-            - CLICKHOUSE_PASSWORD=
-            - CLICKHOUSE_DB=default
-            - CLICKHOUSE_CLUSTER_ENABLED=false
-
-            # Redis
-            - REDIS_CONNECTION_STRING=redis://redis:6379
-            - REDIS_HOST=redis
-            - REDIS_PORT=6379
-
-            # Security
-            - SALT=${salt}
-            - ENCRYPTION_KEY=${encryption_key}
-
-            # Features
-            - TELEMETRY_ENABLED=false
-            - LANGFUSE_LOG_LEVEL=info
-
-            # Worker
             - LANGFUSE_WORKER_HOST=0.0.0.0
             - LANGFUSE_WORKER_PORT=3030
             - PORT=3030
@@ -146,26 +114,75 @@ write_files:
         sleep 1
       done
 
-      echo "Starting Langfuse services..."
+      echo "Fetching secrets from Key Vault..."
       cd /opt/langfuse
+      source /opt/langfuse/fetch-secrets.sh
+
+      echo "Creating .env file..."
+      cat > .env <<EOF
+      # Database
+      NODE_ENV=production
+      DATABASE_URL=postgresql://$${PG_USER}:$${PG_PASS}@${postgresql_host}:5432/langfuse?sslmode=require
+      DIRECT_URL=postgresql://$${PG_USER}:$${PG_PASS}@${postgresql_host}:5432/langfuse?sslmode=require
+
+      # Clickhouse
+      CLICKHOUSE_MIGRATION_URL=clickhouse://clickhouse:9000
+      CLICKHOUSE_URL=http://clickhouse:8123
+      CLICKHOUSE_USER=default
+      CLICKHOUSE_PASSWORD=
+      CLICKHOUSE_DB=default
+      CLICKHOUSE_CLUSTER_ENABLED=false
+      LANGFUSE_AUTO_CLICKHOUSE_MIGRATION_DISABLED=false
+
+      # Redis
+      REDIS_CONNECTION_STRING=redis://redis:6379
+      REDIS_HOST=redis
+      REDIS_PORT=6379
+
+      # Auth & Security
+      NEXTAUTH_URL=http://${public_ip}:3000
+      NEXTAUTH_SECRET=$${NEXTAUTH}
+      SALT=$${SALT}
+      ENCRYPTION_KEY=$${ENCRYPTION}
+
+      # Features
+      TELEMETRY_ENABLED=false
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=false
+      LANGFUSE_LOG_LEVEL=info
+      LANGFUSE_LOG_FORMAT=text
+
+      # Server
+      PORT=3000
+      HOSTNAME=0.0.0.0
+      EOF
+
+      chmod 600 .env
+
+      echo "Starting Langfuse services..."
       docker compose up -d
 
-      echo "Langfuse is starting up..."
+      echo "✓ Langfuse is starting up..."
       echo "Web interface will be available at: http://${public_ip}:3000"
       echo "It may take 1-2 minutes for all services to be ready."
 
 runcmd:
+  # Install Azure CLI (for Managed Identity access to Key Vault)
+  - curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
   # Install Docker
   - curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
   - sh /tmp/get-docker.sh
   - usermod -aG docker ubuntu
 
-  # Install Docker Compose (standalone)
+  # Install Docker Compose
   - curl -SL https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
   - chmod +x /usr/local/bin/docker-compose
   - ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
 
+  # Wait for Managed Identity to be ready
+  - sleep 30
+
   # Start Langfuse
   - /opt/langfuse/setup.sh
 
-final_message: "Langfuse VM setup complete! Access at http://${public_ip}:3000"
+final_message: "Langfuse VM setup complete! Secrets fetched from Key Vault. Access at http://${public_ip}:3000"

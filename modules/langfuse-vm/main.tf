@@ -125,16 +125,26 @@ resource "azurerm_network_interface_security_group_association" "langfuse" {
   network_security_group_id = azurerm_network_security_group.langfuse.id
 }
 
+# Key Vault Access Policy for VM Managed Identity
+resource "azurerm_key_vault_access_policy" "vm" {
+  key_vault_id = var.key_vault_id
+  tenant_id    = azurerm_linux_virtual_machine.langfuse.identity[0].tenant_id
+  object_id    = azurerm_linux_virtual_machine.langfuse.identity[0].principal_id
+
+  secret_permissions = [
+    "Get",
+    "List"
+  ]
+
+  depends_on = [azurerm_linux_virtual_machine.langfuse]
+}
+
 # Cloud-init script to install Docker and setup Langfuse
 locals {
   cloud_init = templatefile("${path.module}/cloud-init.yaml", {
-    postgresql_host     = var.postgresql_host
-    postgresql_username = var.postgresql_admin_username
-    postgresql_password = var.postgresql_admin_password
-    salt                = var.langfuse_secret_salt
-    nextauth_secret     = var.nextauth_secret
-    encryption_key      = var.encryption_key
-    public_ip           = azurerm_public_ip.langfuse.ip_address
+    key_vault_name  = var.key_vault_name
+    postgresql_host = var.postgresql_host
+    public_ip       = azurerm_public_ip.langfuse.ip_address
   })
 }
 
@@ -153,6 +163,11 @@ resource "azurerm_linux_virtual_machine" "langfuse" {
   admin_ssh_key {
     username   = var.admin_username
     public_key = var.ssh_public_key
+  }
+
+  # Managed Identity for Key Vault access
+  identity {
+    type = "SystemAssigned"
   }
 
   os_disk {

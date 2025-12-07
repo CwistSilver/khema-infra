@@ -52,6 +52,24 @@ variable "key_vault_sku" {
   default     = "standard"
 }
 
+variable "langfuse_secret_salt" {
+  description = "Langfuse secret salt"
+  type        = string
+  sensitive   = true
+}
+
+variable "nextauth_secret" {
+  description = "NextAuth secret"
+  type        = string
+  sensitive   = true
+}
+
+variable "encryption_key" {
+  description = "Encryption key for Langfuse"
+  type        = string
+  sensitive   = true
+}
+
 variable "tags" {
   description = "Tags to apply to resources"
   type        = map(string)

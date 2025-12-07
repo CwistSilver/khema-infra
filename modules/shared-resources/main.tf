@@ -97,6 +97,25 @@ resource "azurerm_key_vault_secret" "postgresql_connection_string" {
   key_vault_id = azurerm_key_vault.main.id
 }
 
+# Store Langfuse secrets in Key Vault
+resource "azurerm_key_vault_secret" "langfuse_secret_salt" {
+  name         = "langfuse-secret-salt"
+  value        = var.langfuse_secret_salt
+  key_vault_id = azurerm_key_vault.main.id
+}
+
+resource "azurerm_key_vault_secret" "nextauth_secret" {
+  name         = "nextauth-secret"
+  value        = var.nextauth_secret
+  key_vault_id = azurerm_key_vault.main.id
+}
+
+resource "azurerm_key_vault_secret" "encryption_key" {
+  name         = "encryption-key"
+  value        = var.encryption_key
+  key_vault_id = azurerm_key_vault.main.id
+}
+
 # Container Registry (Basic SKU - cheapest)
 resource "azurerm_container_registry" "main" {
   name                = "crkhema"
